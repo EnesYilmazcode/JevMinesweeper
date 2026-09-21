@@ -62,7 +62,9 @@ def ask(body, key=None, attempts=12):
         except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as error:
             if getattr(error, "code", None) not in (None, 429, 500, 502, 503, 504) or attempt == attempts - 1:
                 raise
-            time.sleep(0.3 + random.random() * 0.3 + attempt * 0.35)
+            # Back off exponentially: a whole pool run is long enough that a burst of 429s
+            # should cost a pause, not a lost rung.
+            time.sleep(min(8.0, 0.3 * 2 ** attempt) + random.random() * 0.4)
 
 
 def jev_move(board, cells, key=None, n_mines=10):
