@@ -1,6 +1,6 @@
-"""Render the verified five-stage Fly vs Jev Minesweeper race.
+"""Render the verified Fly vs Jev Minesweeper race.
 
-usage: python video/render.py [out.mp4] [fps]
+usage: python video/render.py [out.mp4] [fps] [race.json]
 """
 import json
 import subprocess
@@ -24,11 +24,14 @@ FONT_REG = "C:/Windows/Fonts/segoeui.ttf"
 FONT_BOLD = "C:/Windows/Fonts/segoeuib.ttf"
 FONT_EMOJI = "C:/Windows/Fonts/seguiemj.ttf"
 BOARD = 620
-CELL = BOARD / 9
+CELL = BOARD / ROWS
 ORIGIN = {"fly": (55, 112), "jev": (725, 112)}
+CURSOR = {"fly": (25, 108, 240), "jev": (229, 81, 186)}
+CURSOR_RADIUS, PULSE_RADIUS, CURSOR_HOLD = 23, 48, 0.30
 INTRO, OUTRO = 0.55, 1.05
 FIRST_READY, NEXT_READY = 0.45, 0.18
-MOVE_DURATION, CLEAR_HOLD = 0.40, 0.60
+CLEAR_HOLD = 0.60
+TARGET_SECONDS, MOVE_LIMITS, CASCADE_BONUS = 19.0, (0.15, 0.40), 0.9
 
 
 def font(size, bold=False):
@@ -101,9 +104,64 @@ def draw_board(draw, player, state, previous, progress, game, flags):
         for r, c in np.argwhere(game.mines):
             if (int(r), int(c)) != tuple(state["exploded"]):
                 draw_mine(draw, player, int(r), int(c))
-    clicked = tuple(state["clicked"])
-    x1, y1, x2, y2 = cell_box(player, *clicked, 2)
-    draw.rounded_rectangle([x1 * SS, y1 * SS, x2 * SS, y2 * SS], radius=8 * SS, outline=ACCENT, width=3 * SS)
+
+
+def cell_center(player, cell):
+    x, y = ORIGIN[player]
+    return x + (cell[1] + 0.5) * CELL, y + (cell[0] + 0.5) * CELL
+
+
+def smoothstep(t):
+    t = float(np.clip(t, 0, 1))
+    return t * t * (3 - 2 * t)
+
+
+def cursor_at(stage, k, travel, progress):
+    """Where the player's pointer is, and how visible it is.
+
+    It rests on the square it just clicked while that reveal plays, then glides to the next
+    one and arrives exactly as that click lands.
+    """
+    clicks = [tuple(state["clicked"]) for state in stage["states"]]
+    here = cell_center(stage["player"], clicks[k])
+    if k + 1 < len(clicks):
+        glide = smoothstep((travel - CURSOR_HOLD) / (1 - CURSOR_HOLD))
+        there = cell_center(stage["player"], clicks[k + 1])
+        position = (here[0] + (there[0] - here[0]) * glide, here[1] + (there[1] - here[1]) * glide)
+    else:
+        position = here
+    alpha = 1.0
+    if k == 0:
+        alpha = min(alpha, float(np.clip(travel / 0.25, 0, 1)))
+    if k == len(clicks) - 1:
+        alpha = min(alpha, 1 - float(np.clip((progress - 0.42) / 0.35, 0, 1)))
+    pulse = float(np.clip(travel / 0.28, 0, 1)) if k > 0 else 1.0
+    return position, alpha, pulse
+
+
+def draw_cursor(image, player, position, alpha, pulse):
+    if alpha <= 0.01:
+        return
+    color, pad = CURSOR[player], PULSE_RADIUS + 4
+    sprite = Image.new("RGBA", (2 * pad * SS, 2 * pad * SS), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(sprite)
+
+    def ring(radius, width, opacity):
+        box = ((pad - radius) * SS, (pad - radius) * SS, (pad + radius) * SS, (pad + radius) * SS)
+        draw.ellipse(box, outline=(*color, int(255 * opacity)), width=width * SS)
+
+    if pulse < 1:
+        ring(CURSOR_RADIUS + (PULSE_RADIUS - CURSOR_RADIUS) * pulse, 3, 0.75 * (1 - pulse) * alpha)
+    box = ((pad - CURSOR_RADIUS) * SS, (pad - CURSOR_RADIUS) * SS,
+           (pad + CURSOR_RADIUS) * SS, (pad + CURSOR_RADIUS) * SS)
+    # A white halo keeps the pointer readable over clue digits in the same colour family.
+    draw.ellipse([v + d for v, d in zip(box, (-4 * SS, -4 * SS, 4 * SS, 4 * SS))],
+                 outline=(255, 255, 255, int(235 * alpha)), width=4 * SS)
+    draw.ellipse(box, fill=(*color, int(64 * alpha)))
+    ring(CURSOR_RADIUS, 5, alpha)
+    draw.ellipse(((pad - 4) * SS, (pad - 4) * SS, (pad + 4) * SS, (pad + 4) * SS),
+                 fill=(*color, int(255 * alpha)))
+    image.alpha_composite(sprite, (int((position[0] - pad) * SS), int((position[1] - pad) * SS)))
 
 
 def draw_identity(image, draw, player):
@@ -118,15 +176,17 @@ def draw_identity(image, draw, player):
         draw.text(((x + 70) * SS, 58 * SS), "Jev", font=font(54, True), fill=TEXT, anchor="lm")
 
 
-def draw_progress(draw, player, count, completed, current):
+def draw_progress(draw, player, status):
     x, _ = ORIGIN[player]
-    width, height, gap = 45, 18, 11
-    start = x + BOARD - count * width - (count - 1) * gap
-    for i in range(count):
+    width, gap = 45, 11
+    start = x + BOARD - len(status) * width - (len(status) - 1) * gap
+    for i, state in enumerate(status):
         box = (start + i * (width + gap), 49, start + i * (width + gap) + width, 67)
-        if i < completed:
+        if state == "won":
             rounded(draw, box, 6, ACCENT)
-        elif i == current:
+        elif state == "lost":
+            rounded(draw, box, 6, DANGER)
+        elif state == "current":
             rounded(draw, box, 6, BG, outline=ACCENT, width=3)
         else:
             rounded(draw, box, 6, GRID)
@@ -147,33 +207,51 @@ def draw_finish(image, player, state, alpha):
     image.alpha_composite(overlay)
 
 
-def load_race():
-    raw = json.loads((ROOT / "results" / "showcase" / "race.json").read_text(encoding="utf8"))
+def load_race(path=None):
+    raw = json.loads(Path(path or ROOT / "results" / "showcase" / "race.json").read_text(encoding="utf8"))
     lanes = {"fly": [], "jev": []}
     for number, spec in enumerate(raw["stages"], 1):
         for player in lanes:
             record = spec[player]
             game, states = replay(record["seed"], record["moves"], n_mines=spec["n_mines"],
                                   opening_radius=spec["opening_radius"])
-            if not game.won:
-                raise ValueError(f"stage {number} does not replay to a {player} clear")
+            if game.won != record.get("won", True):
+                raise ValueError(f"stage {number} does not replay to the recorded {player} outcome")
             if len(record.get("flags", [])) != len(record["moves"]):
                 raise ValueError(f"stage {number} has incomplete {player} flag snapshots")
-            lanes[player].append({"game": game, "states": states, "beliefs": record["flags"], "seed": record["seed"]})
+            lanes[player].append({"game": game, "states": states, "beliefs": record["flags"],
+                                  "seed": record["seed"], "player": player})
     return lanes
 
 
-def make_timeline(stages):
+def move_weight(state):
+    """A click that opens a wide cascade earns more of the clock than one that opens a single square."""
+    return 1.0 + CASCADE_BONUS * min(1.0, max(0, len(state["opened"]) - 1) / 10)
+
+
+def pace(lanes):
+    """Hold the race to one length as the ladder gets longer, by scaling every move together."""
+    units = []
+    for stages in lanes.values():
+        fixed = FIRST_READY + (len(stages) - 1) * NEXT_READY + len(stages) * CLEAR_HOLD
+        weight = sum(move_weight(state) for stage in stages for state in stage["states"][1:])
+        units.append((TARGET_SECONDS - OUTRO - INTRO - fixed) / max(1e-6, weight))
+    return float(np.clip(min(units), *MOVE_LIMITS))
+
+
+def make_timeline(stages, unit):
     cursor, timeline = INTRO, []
     for index, stage in enumerate(stages):
         ready = FIRST_READY if index == 0 else NEXT_READY
-        state_starts = [cursor]
+        starts, durations = [cursor], [ready]
         cursor += ready
-        for _ in stage["states"][1:]:
-            state_starts.append(cursor)
-            cursor += MOVE_DURATION
+        for state in stage["states"][1:]:
+            starts.append(cursor)
+            durations.append(unit * move_weight(state))
+            cursor += durations[-1]
         end = cursor + CLEAR_HOLD
-        timeline.append({"start": state_starts[0], "state_starts": np.array(state_starts), "end": end})
+        timeline.append({"start": starts[0], "state_starts": np.array(starts),
+                         "durations": np.array(durations), "end": end})
         cursor = end
     return timeline, cursor
 
@@ -183,29 +261,34 @@ def lane_at(stages, timeline, time):
     segment, stage = timeline[index], stages[index]
     k = int(np.searchsorted(segment["state_starts"], time, side="right") - 1)
     k = max(0, min(k, len(stage["states"]) - 1))
-    if k == 0:
-        progress = 1.0
-    else:
-        progress = float(np.clip((time - segment["state_starts"][k]) / MOVE_DURATION, 0, 1))
+    elapsed = (time - segment["state_starts"][k]) / segment["durations"][k]
+    progress = 1.0 if k == 0 else float(np.clip(elapsed, 0, 1))
+    travel = float(np.clip(elapsed, 0, 1))
     terminal = k == len(stage["states"]) - 1
-    completed = sum(time >= item["end"] for item in timeline)
-    passed = min(len(stages), completed + int(terminal and stage["game"].won))
-    current = None if terminal or completed == len(stages) else index
-    return index, stage, k, progress, passed, current
+    status = []
+    for i, item in enumerate(timeline):
+        if time >= item["end"] or (i == index and terminal):
+            status.append("won" if stages[i]["game"].won else "lost")
+        elif i == index:
+            status.append("current")
+        else:
+            status.append("pending")
+    return index, stage, k, progress, status, travel
 
 
 def frame_at(lanes, timelines, time):
     image = Image.new("RGBA", (W * SS, H * SS), BG)
     draw = ImageDraw.Draw(image)
     for player in ("fly", "jev"):
-        _, stage, k, progress, passed, current = lane_at(lanes[player], timelines[player], time)
+        _, stage, k, progress, status, travel = lane_at(lanes[player], timelines[player], time)
         states, beliefs, game = stage["states"], stage["beliefs"], stage["game"]
         state = states[k]
         draw_identity(image, draw, player)
-        draw_progress(draw, player, len(lanes[player]), passed, current)
+        draw_progress(draw, player, status)
         flag_index = min(k - 1, len(beliefs) - 1)
         flags = {tuple(x) for x in beliefs[flag_index]} if beliefs and k > 0 else set()
         draw_board(draw, player, state, states[max(0, k - 1)], progress, game, flags)
+        draw_cursor(image, player, *cursor_at(stage, k, travel, progress))
         draw_finish(image, player, state, np.clip((progress - 0.42) / 0.35, 0, 1))
     return image.convert("RGB").resize((W, H), Image.Resampling.LANCZOS)
 
@@ -233,10 +316,11 @@ def sound_events(lanes, timelines):
 def main():
     out = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "renders" / "fly-vs-jev-race.mp4"
     fps = int(sys.argv[2]) if len(sys.argv) > 2 else 60
-    lanes = load_race()
+    lanes = load_race(sys.argv[3] if len(sys.argv) > 3 else None)
+    unit = pace(lanes)
     timelines, finishes = {}, {}
     for player in lanes:
-        timelines[player], finishes[player] = make_timeline(lanes[player])
+        timelines[player], finishes[player] = make_timeline(lanes[player], unit)
     total = max(finishes.values()) + OUTRO
     out.parent.mkdir(parents=True, exist_ok=True)
     silent = out.with_suffix(".silent.mp4")
@@ -255,8 +339,11 @@ def main():
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(silent), "-i", str(wav), "-map", "0:v", "-map", "1:a",
                     "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", str(out)], check=True)
     silent.unlink(); wav.unlink()
-    winner = min(finishes, key=finishes.get)
-    print(f"wrote {out}: {total:.1f}s, {len(lanes['fly'])} stages, {winner} finished first")
+    passed = {p: sum(stage["game"].won for stage in lanes[p]) for p in lanes}
+    winner = max(lanes, key=lambda p: (passed[p], -finishes[p]))
+    print(f"wrote {out}: {total:.1f}s, {len(lanes['fly'])} stages, "
+          f"fly passed {passed['fly']} in {finishes['fly']:.1f}s, jev passed {passed['jev']} in "
+          f"{finishes['jev']:.1f}s, {winner} wins")
 
 
 if __name__ == "__main__":
