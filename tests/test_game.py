@@ -45,11 +45,11 @@ def test_saved_moves_replay_exactly():
 
 
 def test_showcase_mine_count_round_trips():
-    game = Game(7045, n_mines=5)
+    game = Game(7273, n_mines=5, opening_radius=0)
     assert int(game.mines.sum()) == 5
     while not game.over:
         game.click(teacher_move(game.visible()))
-    restored, _ = replay(7045, game.record()["moves"], n_mines=5)
+    restored, _ = replay(7273, game.record()["moves"], n_mines=5, opening_radius=0)
     assert restored.record() == game.record()
 
 

@@ -11,12 +11,14 @@ from minesweeper.game import Game
 from minesweeper.jev import jev_move, label
 
 N_MINES = int(sys.argv[4]) if len(sys.argv) > 4 else 10
-OUT = ROOT / "runs" / ("jev" if N_MINES == 10 else f"jev-{N_MINES}")
+OPENING_RADIUS = int(sys.argv[5]) if len(sys.argv) > 5 else 1
+SUFFIX = "" if N_MINES == 10 and OPENING_RADIUS == 1 else f"-{N_MINES}-r{OPENING_RADIUS}"
+OUT = ROOT / "runs" / f"jev{SUFFIX}"
 OUT.mkdir(parents=True, exist_ok=True)
 
 
 def one(seed):
-    game, tokens, confidence, flags, started = Game(seed, n_mines=N_MINES), 0, [], [], time.time()
+    game, tokens, confidence, flags, started = Game(seed, n_mines=N_MINES, opening_radius=OPENING_RADIUS), 0, [], [], time.time()
     while not game.over:
         cells = game.legal_cells()
         move, p, used, probabilities = jev_move(game.visible(), cells, n_mines=N_MINES)

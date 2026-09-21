@@ -14,13 +14,15 @@ RUNS = Path(os.environ.get("MINESWEEPER_RUNS", ROOT / "runs"))
 first, last = int(sys.argv[1]), int(sys.argv[2])
 control = sys.argv[3] if len(sys.argv) > 3 else "none"
 n_mines = int(sys.argv[4]) if len(sys.argv) > 4 else 10
-folder = f"fly-{control}" if n_mines == 10 else f"fly-{control}-{n_mines}"
+opening_radius = int(sys.argv[5]) if len(sys.argv) > 5 else 1
+suffix = "" if n_mines == 10 and opening_radius == 1 else f"-{n_mines}-r{opening_radius}"
+folder = f"fly-{control}{suffix}"
 out = RUNS / folder
 out.mkdir(parents=True, exist_ok=True)
 player = FlyPlayer(RUNS / "readout" / "readout.npz", control=control)
 started = time.time()
 for seed in range(first, last):
-    game, flags = Game(seed, n_mines=n_mines), []
+    game, flags = Game(seed, n_mines=n_mines, opening_radius=opening_radius), []
     while not game.over:
         cells = game.legal_cells()
         scores = player.scores(game.visible(), cells)

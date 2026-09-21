@@ -64,11 +64,11 @@ Breaking the learned pathway removes the intact fly's edge. Every saved result, 
 
 ## The video
 
-The GIF above and the full MP4 replay a genuine double-clear on seed 7045 using an easier five-mine showcase board. The fly clears it in five chosen clicks and Jev in three. Before every click, each player flags the five squares it currently considers most dangerous; those flags come directly from its recorded scores and can change as new clues appear. The exact showcase records are committed in [`results/showcase`](results/showcase).
+The GIF above and the full MP4 replay a genuine double-clear on seed 7273 using an easier five-mine showcase board. Both players begin with only the center clue visible and clear the board in four chosen clicks. After play begins, each player flags the five squares it currently considers most dangerous; those flags come directly from its recorded scores and can change as new clues appear. The exact showcase records are committed in [`results/showcase`](results/showcase).
 
 **[Watch/download the full comparison with sound](media/fly-vs-jev.mp4)**
 
-Every reveal and flag is regenerated from the saved record, and the replay must reach the recorded terminal state. The light-mode renderer uses large boards, staggered grow-in reveals, a centered **Game over** overlay after a mine or **Cleared!** after a win, and synthesized stereo clicks, reveal chimes, mine thumps, and win chords with the fly panned left and Jev right.
+Every reveal and flag is regenerated from the saved record, and the replay must reach the recorded terminal state. The light-mode renderer gives nearly the whole frame to the two boards, uses staggered grow-in reveals, shows only **Game over** after a mine or **Cleared!** after a win, and adds synthesized stereo clicks, reveal chimes, mine thumps, and win chords with the fly panned left and Jev right.
 
 <p align="center"><img src="media/final.jpg" width="760" alt="Final Minesweeper boards: both the fly and Jev cleared the board"></p>
 
@@ -88,9 +88,9 @@ python scripts/baselines.py 6000 6016
 python scripts/scoreboard.py 6000 6016
 
 # Render the selected comparison; ffmpeg is required.
-modal run scripts/modal_minesweeper.py::fly_games --first 7045 --last 7046 --control none --mines 5
-AI_GATEWAY_API_KEY=... python scripts/jev_games.py 7045 7046 1 5
-python video/render.py 7045 renders/fly-vs-jev-7045.mp4 60 5
+modal run scripts/modal_minesweeper.py::fly_games --first 7273 --last 7274 --control none --mines 5 --opening-radius 0
+AI_GATEWAY_API_KEY=... python scripts/jev_games.py 7273 7274 1 5 0
+python video/render.py 7273 renders/fly-vs-jev-7273.mp4 60 5 0
 ```
 
 | Folder | What's in it |
