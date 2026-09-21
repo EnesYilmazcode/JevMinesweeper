@@ -1,6 +1,9 @@
 import sys
 from pathlib import Path
 
+import json
+from pathlib import Path
+
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -51,6 +54,20 @@ def test_showcase_mine_count_round_trips():
         game.click(teacher_move(game.visible()))
     restored, _ = replay(7273, game.record()["moves"], n_mines=5, opening_radius=0)
     assert restored.record() == game.record()
+
+
+def test_showcase_race_is_five_verified_double_clears():
+    path = Path(__file__).resolve().parents[1] / "results" / "showcase" / "race.json"
+    stages = json.loads(path.read_text(encoding="utf8"))["stages"]
+    assert len(stages) == 5
+    for stage in stages:
+        for player in ("fly", "jev"):
+            record = stage[player]
+            game, states = replay(record["seed"], record["moves"], n_mines=stage["n_mines"],
+                                  opening_radius=stage["opening_radius"])
+            assert game.won
+            assert len(record["flags"]) == len(record["moves"])
+            assert int((states[0]["visible"] >= 0).sum()) == 1
 
 
 if __name__ == "__main__":

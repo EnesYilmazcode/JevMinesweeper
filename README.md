@@ -1,10 +1,10 @@
 <h1 align="center">Fly vs Jev: Minesweeper</h1>
 
-<p align="center"><b>A simulated fruit-fly brain against an AI model, on the same Minesweeper boards.</b><br>
+<p align="center"><b>A simulated fruit-fly brain against an AI model, playing Minesweeper.</b><br>
 The full wiring of an adult fly—all 166,700 neurons—sees only the revealed clues and picks every square. TypeSafe AI's Jev gets the same view.</p>
 
 <p align="center">
-  <img src="media/fly-vs-jev.gif" width="760" alt="A fly connectome and Jev playing the same Minesweeper board side by side">
+  <img src="media/fly-vs-jev.gif" width="760" alt="A fly connectome and Jev racing through five Minesweeper stages side by side">
 </p>
 
 ## How it works
@@ -64,11 +64,13 @@ Breaking the learned pathway removes the intact fly's edge. Every saved result, 
 
 ## The video
 
-The GIF above and the full MP4 replay a genuine double-clear on seed 7273 using an easier five-mine showcase board. Both players begin with only the center clue visible and clear the board in four chosen clicks. After play begins, each player flags the five squares it currently considers most dangerous; those flags come directly from its recorded scores and can change as new clues appear. The exact showcase records are committed in [`results/showcase`](results/showcase).
+The GIF above and the full MP4 form a genuine five-stage race. Every stage uses an easier five-mine board, begins with exactly one center clue visible, and ends in a real clear. The independently seeded boards become more involved across the race: the fly grows from two decisions in stage one to nine in stage five, while Jev grows from two to five. Each lane advances immediately after its own clear, so neither player waits for the other.
+
+The five header boxes fill as stages are passed; there is no timer or score clutter. After play begins, each player flags the five squares it currently considers most dangerous. Those flags come directly from its recorded scores and can change as new clues appear. All ten exact replay records are committed in [`results/showcase/race.json`](results/showcase/race.json).
 
 **[Watch/download the full comparison with sound](media/fly-vs-jev.mp4)**
 
-Every reveal and flag is regenerated from the saved record, and the replay must reach the recorded terminal state. The light-mode renderer gives nearly the whole frame to the two boards, uses staggered grow-in reveals, shows only **Game over** after a mine or **Cleared!** after a win, and adds synthesized stereo clicks, reveal chimes, mine thumps, and win chords with the fly panned left and Jev right.
+Every reveal and flag is regenerated from the saved record, and every replay must reach its recorded terminal state. The 15.4-second light-mode renderer gives nearly the whole frame to the two boards, uses staggered grow-in reveals, and shows only **Cleared!** at the end of each stage. Its stereo soundtrack contains 114 synthesized cues for clicks, flags, flood reveals, clears, and stage changes, with the fly panned left and Jev right.
 
 <p align="center"><img src="media/final.jpg" width="760" alt="Final Minesweeper boards: both the fly and Jev cleared the board"></p>
 
@@ -87,10 +89,8 @@ AI_GATEWAY_API_KEY=... python scripts/jev_games.py 6000 6016 4
 python scripts/baselines.py 6000 6016
 python scripts/scoreboard.py 6000 6016
 
-# Render the selected comparison; ffmpeg is required.
-modal run scripts/modal_minesweeper.py::fly_games --first 7273 --last 7274 --control none --mines 5 --opening-radius 0
-AI_GATEWAY_API_KEY=... python scripts/jev_games.py 7273 7274 1 5 0
-python video/render.py 7273 renders/fly-vs-jev-7273.mp4 60 5 0
+# Render the committed five-stage race; ffmpeg is required.
+python video/render.py renders/fly-vs-jev-race.mp4 60
 ```
 
 | Folder | What's in it |

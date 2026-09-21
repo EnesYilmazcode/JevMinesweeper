@@ -19,6 +19,14 @@ def click():
     return raw * np.exp(-np.arange(n) / (SR * 0.007))
 
 
+def flag():
+    return tone(940, 0.075, 24, (1, 0.12))
+
+
+def stage():
+    return (tone(392, 0.28, 9) + tone(523.25, 0.28, 8)) / 2
+
+
 def boom():
     t = np.arange(int(SR * 0.9)) / SR
     rng = np.random.default_rng(21)
@@ -33,10 +41,13 @@ def mix(events, duration):
     out = np.zeros((int(SR * (duration + 2)), 2))
     base_click = click()
     for at, kind, pan, amount in events:
-        if kind == "click": wave_, gain = base_click, 0.045
-        elif kind == "reveal": wave_, gain = tone(520 + min(amount, 18) * 17, 0.22, 10), 0.055
+        if kind == "click": wave_, gain = base_click, 0.055
+        elif kind == "flag": wave_, gain = flag(), 0.045
+        elif kind == "reveal": wave_, gain = tone(520 + min(amount, 18) * 17, 0.22, 10), 0.06
         elif kind == "boom": wave_, gain = boom(), 0.23
-        else: wave_, gain = chord(), 0.16
+        elif kind == "stage": wave_, gain = stage(), 0.08
+        elif kind == "win": wave_, gain = chord(), 0.16
+        else: raise ValueError(f"unknown sound event: {kind}")
         i = int(at * SR)
         segment = wave_[:max(0, len(out) - i)] * gain
         left, right = np.sqrt((1 - pan) / 2), np.sqrt((1 + pan) / 2)
@@ -50,4 +61,3 @@ def write_wav(path, audio):
     with wave.open(str(path), "wb") as target:
         target.setnchannels(2); target.setsampwidth(2); target.setframerate(SR)
         target.writeframes(data.tobytes())
-

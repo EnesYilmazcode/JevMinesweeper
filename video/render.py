@@ -1,6 +1,6 @@
-"""Render verified Fly vs Jev Minesweeper replays with animation and sound.
+"""Render the verified five-stage Fly vs Jev Minesweeper race.
 
-usage: python video/render.py <seed> [out.mp4] [fps]
+usage: python video/render.py [out.mp4] [fps]
 """
 import json
 import subprocess
@@ -26,15 +26,13 @@ FONT_EMOJI = "C:/Windows/Fonts/seguiemj.ttf"
 BOARD = 620
 CELL = BOARD / 9
 ORIGIN = {"fly": (55, 112), "jev": (725, 112)}
-INTRO, OUTRO = 0.55, 1.65
+INTRO, OUTRO = 0.55, 1.05
+FIRST_READY, NEXT_READY = 0.45, 0.18
+MOVE_DURATION, CLEAR_HOLD = 0.40, 0.60
 
 
 def font(size, bold=False):
     return ImageFont.truetype(FONT_BOLD if bold else FONT_REG, int(size * SS))
-
-
-def schedule(count):
-    return np.maximum(0.085, 0.40 * 0.91 ** np.arange(count))
 
 
 def rounded(draw, box, radius, fill, outline=None, width=1):
@@ -120,7 +118,21 @@ def draw_identity(image, draw, player):
         draw.text(((x + 70) * SS, 58 * SS), "Jev", font=font(54, True), fill=TEXT, anchor="lm")
 
 
-def draw_finish(image, player, state, game, alpha):
+def draw_progress(draw, player, count, completed, current):
+    x, _ = ORIGIN[player]
+    width, height, gap = 45, 18, 11
+    start = x + BOARD - count * width - (count - 1) * gap
+    for i in range(count):
+        box = (start + i * (width + gap), 49, start + i * (width + gap) + width, 67)
+        if i < completed:
+            rounded(draw, box, 6, ACCENT)
+        elif i == current:
+            rounded(draw, box, 6, BG, outline=ACCENT, width=3)
+        else:
+            rounded(draw, box, 6, GRID)
+
+
+def draw_finish(image, player, state, alpha):
     if not (state["exploded"] is not None or state["won"]) or alpha <= 0:
         return
     x, y = ORIGIN[player]
@@ -135,43 +147,97 @@ def draw_finish(image, player, state, game, alpha):
     image.alpha_composite(overlay)
 
 
-def frame_at(games, states, beliefs, starts, durs, time):
+def load_race():
+    raw = json.loads((ROOT / "results" / "showcase" / "race.json").read_text(encoding="utf8"))
+    lanes = {"fly": [], "jev": []}
+    for number, spec in enumerate(raw["stages"], 1):
+        for player in lanes:
+            record = spec[player]
+            game, states = replay(record["seed"], record["moves"], n_mines=spec["n_mines"],
+                                  opening_radius=spec["opening_radius"])
+            if not game.won:
+                raise ValueError(f"stage {number} does not replay to a {player} clear")
+            if len(record.get("flags", [])) != len(record["moves"]):
+                raise ValueError(f"stage {number} has incomplete {player} flag snapshots")
+            lanes[player].append({"game": game, "states": states, "beliefs": record["flags"], "seed": record["seed"]})
+    return lanes
+
+
+def make_timeline(stages):
+    cursor, timeline = INTRO, []
+    for index, stage in enumerate(stages):
+        ready = FIRST_READY if index == 0 else NEXT_READY
+        state_starts = [cursor]
+        cursor += ready
+        for _ in stage["states"][1:]:
+            state_starts.append(cursor)
+            cursor += MOVE_DURATION
+        end = cursor + CLEAR_HOLD
+        timeline.append({"start": state_starts[0], "state_starts": np.array(state_starts), "end": end})
+        cursor = end
+    return timeline, cursor
+
+
+def lane_at(stages, timeline, time):
+    index = next((i for i, segment in enumerate(timeline) if time < segment["end"]), len(timeline) - 1)
+    segment, stage = timeline[index], stages[index]
+    k = int(np.searchsorted(segment["state_starts"], time, side="right") - 1)
+    k = max(0, min(k, len(stage["states"]) - 1))
+    if k == 0:
+        progress = 1.0
+    else:
+        progress = float(np.clip((time - segment["state_starts"][k]) / MOVE_DURATION, 0, 1))
+    terminal = k == len(stage["states"]) - 1
+    completed = sum(time >= item["end"] for item in timeline)
+    passed = min(len(stages), completed + int(terminal and stage["game"].won))
+    current = None if terminal or completed == len(stages) else index
+    return index, stage, k, progress, passed, current
+
+
+def frame_at(lanes, timelines, time):
     image = Image.new("RGBA", (W * SS, H * SS), BG)
     draw = ImageDraw.Draw(image)
     for player in ("fly", "jev"):
-        player_states = states[player]
-        k = int(np.searchsorted(starts, time, side="right") - 1)
-        k = max(0, min(k, len(player_states) - 1))
-        progress = 1 if k == 0 or k >= len(durs) else np.clip((time - starts[k]) / durs[k], 0, 1)
-        state = player_states[k]
+        _, stage, k, progress, passed, current = lane_at(lanes[player], timelines[player], time)
+        states, beliefs, game = stage["states"], stage["beliefs"], stage["game"]
+        state = states[k]
         draw_identity(image, draw, player)
-        flag_index = min(k - 1, len(beliefs[player]) - 1)
-        flags = {tuple(x) for x in beliefs[player][flag_index]} if beliefs[player] and k > 0 else set()
-        draw_board(draw, player, state, player_states[max(0, k - 1)], progress, games[player], flags)
-        draw_finish(image, player, state, games[player], np.clip((progress - 0.42) / 0.35, 0, 1))
+        draw_progress(draw, player, len(lanes[player]), passed, current)
+        flag_index = min(k - 1, len(beliefs) - 1)
+        flags = {tuple(x) for x in beliefs[flag_index]} if beliefs and k > 0 else set()
+        draw_board(draw, player, state, states[max(0, k - 1)], progress, game, flags)
+        draw_finish(image, player, state, np.clip((progress - 0.42) / 0.35, 0, 1))
     return image.convert("RGB").resize((W, H), Image.Resampling.LANCZOS)
 
 
+def sound_events(lanes, timelines):
+    events = []
+    for player in ("fly", "jev"):
+        pan = -0.58 if player == "fly" else 0.58
+        for stage_index, (stage, segment) in enumerate(zip(lanes[player], timelines[player])):
+            if stage_index:
+                events.append((segment["start"] + 0.03, "stage", pan, 0))
+            for k, state in enumerate(stage["states"][1:], 1):
+                at = float(segment["state_starts"][k])
+                events.append((at, "click", pan, 0))
+                events.append((at + 0.035, "flag", pan, 0))
+                if state["exploded"] is not None:
+                    events.append((at + 0.08, "boom", pan, 0))
+                elif state["won"]:
+                    events.append((at + 0.09, "win", pan, 0))
+                elif len(state["opened"]) > 1:
+                    events.append((at + 0.07, "reveal", pan, len(state["opened"])))
+    return events
+
+
 def main():
-    seed = int(sys.argv[1])
-    out = Path(sys.argv[2]) if len(sys.argv) > 2 else ROOT / "renders" / f"fly-vs-jev-{seed}.mp4"
-    fps = int(sys.argv[3]) if len(sys.argv) > 3 else 60
-    n_mines = int(sys.argv[4]) if len(sys.argv) > 4 else 10
-    opening_radius = int(sys.argv[5]) if len(sys.argv) > 5 else 1
-    games, states, beliefs = {}, {}, {}
-    suffix = "" if n_mines == 10 and opening_radius == 1 else f"-{n_mines}-r{opening_radius}"
-    for player, folder in (("fly", f"fly-none{suffix}"), ("jev", f"jev{suffix}")):
-        path = ROOT / "runs" / folder / f"{seed}.json"
-        if not path.exists() and n_mines != 10:
-            path = ROOT / "results" / "showcase" / f"{player}.json"
-        record = json.loads(path.read_text(encoding="utf8"))
-        games[player], states[player] = replay(seed, record["moves"], n_mines=record.get("n_mines", n_mines),
-                                               opening_radius=record.get("opening_radius", opening_radius))
-        beliefs[player] = record.get("flags", [])
-    longest = max(len(x) for x in states.values())
-    durs = schedule(longest)
-    starts = INTRO + np.concatenate(([0], np.cumsum(durs[:-1])))
-    total = starts[-1] + durs[-1] + OUTRO
+    out = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "renders" / "fly-vs-jev-race.mp4"
+    fps = int(sys.argv[2]) if len(sys.argv) > 2 else 60
+    lanes = load_race()
+    timelines, finishes = {}, {}
+    for player in lanes:
+        timelines[player], finishes[player] = make_timeline(lanes[player])
+    total = max(finishes.values()) + OUTRO
     out.parent.mkdir(parents=True, exist_ok=True)
     silent = out.with_suffix(".silent.mp4")
     ff = subprocess.Popen(["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
@@ -179,25 +245,18 @@ def main():
                            "-crf", "16", "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(silent)], stdin=subprocess.PIPE)
     frames = int(total * fps)
     for i in range(frames):
-        ff.stdin.write(frame_at(games, states, beliefs, starts, durs, i / fps).tobytes())
+        ff.stdin.write(frame_at(lanes, timelines, i / fps).tobytes())
         if i % 300 == 0: print(f"frame {i}/{frames}", flush=True)
     ff.stdin.close(); ff.wait()
     if ff.returncode: raise RuntimeError(f"ffmpeg exited {ff.returncode}")
-    events = []
-    for player in ("fly", "jev"):
-        pan = -0.58 if player == "fly" else 0.58
-        for k, state in enumerate(states[player][1:], 1):
-            if k >= len(starts): break
-            events.append((starts[k], "click", pan, 0))
-            if state["exploded"] is not None: events.append((starts[k] + 0.08, "boom", pan, 0))
-            elif state["won"]: events.append((starts[k] + 0.08, "win", pan, 0))
-            elif len(state["opened"]) > 1: events.append((starts[k] + 0.07, "reveal", pan, len(state["opened"])))
+    events = sound_events(lanes, timelines)
     wav = out.with_suffix(".wav")
     write_wav(wav, mix(events, total))
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(silent), "-i", str(wav), "-map", "0:v", "-map", "1:a",
                     "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", str(out)], check=True)
     silent.unlink(); wav.unlink()
-    print(f"wrote {out}: {total:.1f}s, fly {'won' if games['fly'].won else 'lost'}, Jev {'won' if games['jev'].won else 'lost'}")
+    winner = min(finishes, key=finishes.get)
+    print(f"wrote {out}: {total:.1f}s, {len(lanes['fly'])} stages, {winner} finished first")
 
 
 if __name__ == "__main__":
