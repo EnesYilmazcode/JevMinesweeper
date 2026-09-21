@@ -4,7 +4,7 @@
 The full wiring of an adult fly, all 166,700 neurons, sees only the revealed clues and picks every square. TypeSafe AI's Jev gets the same view.</p>
 
 <p align="center">
-  <img src="media/fly-vs-jev.gif" width="640" alt="A fly connectome and Jev racing up a mine ladder, five Minesweeper boards each, side by side">
+  <img src="media/fly-vs-jev-ladder.gif" width="640" alt="A fly connectome and Jev racing up a mine ladder, five Minesweeper boards each, side by side">
 </p>
 
 ## How it works

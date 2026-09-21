@@ -25,12 +25,12 @@ def main():
 
     filters = (f"fps={GIF_FPS},scale={GIF_WIDTH}:-1:flags=lanczos,"
                "split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=3")
-    ffmpeg("-i", str(mp4), "-vf", filters, "-loop", "0", str(MEDIA / "fly-vs-jev.gif"))
+    ffmpeg("-i", str(mp4), "-vf", filters, "-loop", "0", str(MEDIA / "fly-vs-jev-ladder.gif"))
 
     ffmpeg("-ss", "0.5", "-i", str(mp4), "-frames:v", "1", "-q:v", "3", str(MEDIA / "first-frame.jpg"))
     ffmpeg("-sseof", "-0.4", "-i", str(mp4), "-frames:v", "1", "-q:v", "3", str(MEDIA / "final.jpg"))
 
-    for path in (mp4, MEDIA / "fly-vs-jev.gif", MEDIA / "first-frame.jpg", MEDIA / "final.jpg"):
+    for path in (mp4, MEDIA / "fly-vs-jev-ladder.gif", MEDIA / "first-frame.jpg", MEDIA / "final.jpg"):
         print(f"{path.relative_to(ROOT)}: {path.stat().st_size / 1e6:.2f} MB")
 
 
