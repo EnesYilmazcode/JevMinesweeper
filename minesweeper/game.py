@@ -16,12 +16,13 @@ def neighbors(cell):
 
 
 class Game:
-    def __init__(self, seed):
+    def __init__(self, seed, n_mines=N_MINES):
         self.seed = int(seed)
+        self.n_mines = int(n_mines)
         rng = np.random.default_rng(seed)
         forbidden = {CENTER, *neighbors(CENTER)}
         choices = [i for i in range(ROWS * COLS) if divmod(i, COLS) not in forbidden]
-        picked = rng.choice(choices, N_MINES, replace=False)
+        picked = rng.choice(choices, self.n_mines, replace=False)
         self.mines = np.zeros((ROWS, COLS), bool)
         self.mines.flat[picked] = True
         self.clues = np.zeros((ROWS, COLS), np.int8)
@@ -54,7 +55,7 @@ class Game:
 
     @property
     def won(self):
-        return int(self.revealed.sum()) == ROWS * COLS - N_MINES
+        return int(self.revealed.sum()) == ROWS * COLS - self.n_mines
 
     @property
     def over(self):
@@ -76,11 +77,12 @@ class Game:
 
     def record(self):
         return {"seed": self.seed, "won": self.won, "safe_revealed": self.safe_revealed,
-                "n_clicks": len(self.moves), "moves": [[int(x[0]), int(x[1])] for x in self.moves[1:]]}
+                "n_mines": self.n_mines, "n_clicks": len(self.moves),
+                "moves": [[int(x[0]), int(x[1])] for x in self.moves[1:]]}
 
 
-def replay(seed, moves):
-    game = Game(seed)
+def replay(seed, moves, n_mines=N_MINES):
+    game = Game(seed, n_mines=n_mines)
     states = [{"visible": game.visible().copy(), "opened": np.argwhere(game.revealed).tolist(),
                "clicked": CENTER, "won": game.won, "exploded": None}]
     for move in moves:

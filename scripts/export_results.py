@@ -8,6 +8,8 @@ out.mkdir(parents=True, exist_ok=True)
 for folder in ("fly-none", "jev", "solver", "random", "fly-shuffled_input", "fly-shuffled_readout", "fly-silenced"):
     games = {}
     for path in sorted((ROOT / "runs" / folder).glob("*.json"), key=lambda p: int(p.stem)):
+        if not 6000 <= int(path.stem) < 6016:
+            continue
         record = json.loads(path.read_text(encoding="utf8"))
         games[path.stem] = {k: record[k] for k in ("won", "safe_revealed", "n_clicks", "moves")}
     (out / f"{folder}.json").write_text(json.dumps(games), encoding="utf8")

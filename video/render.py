@@ -16,16 +16,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from minesweeper.game import COLS, COVERED, MINE, N_MINES, ROWS, replay
 from sound import mix, write_wav
 
-W, H, SS = 1800, 1200, 2
-BG, PANEL, GRID, COVER = "#0b1220", "#111c30", "#263855", "#31527d"
-REVEALED, TEXT, MUTED, ACCENT, DANGER = "#e8eef7", "#f8fafc", "#9fb0c8", "#65d6ad", "#ff6b6b"
+W, H, SS = 1400, 850, 2
+BG, GRID, COVER = "#faf8ef", "#d6cec2", "#aaa196"
+REVEALED, TEXT, MUTED, ACCENT, DANGER = "#eee4da", "#776e65", "#9b9187", "#2f9e75", "#f05f50"
 NUMBER = {1: "#2563eb", 2: "#16a34a", 3: "#dc2626", 4: "#6d28d9", 5: "#9f1239", 6: "#0891b2", 7: "#111827", 8: "#64748b"}
 FONT_REG = "C:/Windows/Fonts/segoeui.ttf"
 FONT_BOLD = "C:/Windows/Fonts/segoeuib.ttf"
-BOARD = 650
+BOARD = 560
 CELL = BOARD / 9
-ORIGIN = {"fly": (155, 375), "jev": (995, 375)}
-INTRO, OUTRO = 1.1, 2.6
+ORIGIN = {"fly": (100, 180), "jev": (740, 180)}
+INTRO, OUTRO = 0.55, 1.65
 
 
 def font(size, bold=False):
@@ -33,7 +33,7 @@ def font(size, bold=False):
 
 
 def schedule(count):
-    return np.maximum(0.17, 0.72 * 0.945 ** np.arange(count))
+    return np.maximum(0.085, 0.40 * 0.91 ** np.arange(count))
 
 
 def rounded(draw, box, radius, fill, outline=None, width=1):
@@ -62,21 +62,38 @@ def draw_mine(draw, player, r, c, exploded=False):
     draw.ellipse(((cx - 5) * SS, (cy - 7) * SS, (cx + 1) * SS, (cy - 1) * SS), fill="#ffffff")
 
 
-def draw_board(draw, player, state, previous, progress, game):
+def draw_flag(draw, player, r, c):
+    x1, y1, x2, y2 = cell_box(player, r, c, 10)
+    pole_x, top, bottom = x1 + (x2 - x1) * 0.40, y1 + 4, y2 - 5
+    draw.line((pole_x * SS, top * SS, pole_x * SS, bottom * SS), fill="#f9f6f2", width=4 * SS)
+    draw.polygon(((pole_x * SS, top * SS), ((x2 - 3) * SS, (top + 9) * SS), (pole_x * SS, (top + 19) * SS)), fill=DANGER)
+    draw.line(((pole_x - 8) * SS, bottom * SS, (pole_x + 9) * SS, bottom * SS), fill="#f9f6f2", width=4 * SS)
+
+
+def draw_board(draw, player, state, previous, progress, game, flags):
     board = state["visible"]
-    opened = {tuple(x) for x in state["opened"]}
+    opened_list = [tuple(x) for x in state["opened"]]
+    opened = set(opened_list)
     lost = state["exploded"] is not None
+    reveal_order = {cell: i for i, cell in enumerate(opened_list)}
     for r in range(ROWS):
         for c in range(COLS):
             value = int(board[r, c])
             box = cell_box(player, r, c)
             if value == COVERED:
                 rounded(draw, box, 7, COVER)
+                if (r, c) in flags:
+                    draw_flag(draw, player, r, c)
             else:
-                scale = (0.35 + 0.65 * min(1, progress * 1.5)) if (r, c) in opened else 1
+                if (r, c) in opened:
+                    delay = 0.42 * reveal_order[(r, c)] / max(1, len(opened_list) - 1)
+                    local = np.clip((progress - delay) / max(0.01, 1 - delay), 0, 1)
+                    scale = 0.18 + 0.82 * (1 - (1 - local) ** 3)
+                else:
+                    scale = 1
                 cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
                 half = CELL * 0.46 * scale
-                rounded(draw, (cx - half, cy - half, cx + half, cy + half), 7, REVEALED)
+                rounded(draw, (cx - half, cy - half, cx + half, cy + half), 7, REVEALED, outline="#d9cfc2", width=1)
                 if value > 0:
                     center_text(draw, (cx, cy), str(value), font(35, True), NUMBER[value])
                 elif value == MINE:
@@ -90,43 +107,66 @@ def draw_board(draw, player, state, previous, progress, game):
     draw.rounded_rectangle([x1 * SS, y1 * SS, x2 * SS, y2 * SS], radius=8 * SS, outline=ACCENT, width=3 * SS)
 
 
-def draw_status(draw, player, game, state, label, subtitle):
+def draw_status(draw, player, game, state, label):
     x, y = ORIGIN[player]
-    draw.text((x * SS, 218 * SS), label, font=font(76, True), fill=TEXT)
-    draw.text((x * SS, 308 * SS), subtitle, font=font(25), fill=MUTED)
+    draw.text((x * SS, 115 * SS), label, font=font(72, True), fill=TEXT, anchor="lm")
     safe = int(np.sum(state["visible"] >= 0))
-    status = "CLEARED" if state["won"] else (f"MINE · {safe}/{ROWS * COLS - N_MINES} SAFE" if state["exploded"] is not None else f"{safe} / {ROWS * COLS - N_MINES} SAFE")
-    color = ACCENT if state["won"] else (DANGER if state["exploded"] is not None else TEXT)
-    draw.text(((x + BOARD) * SS, 258 * SS), status, font=font(31, True), fill=color, anchor="ra")
+    bw, bh = 180, 92
+    bx, by = x + BOARD - bw, 69
+    rounded(draw, (bx, by, bx + bw, by + bh), 8, "#bbada0")
+    center_text(draw, (bx + bw / 2, by + 24), "SAFE", font(18, True), "#eee4da")
+    center_text(draw, (bx + bw / 2, by + 60), f"{safe} / {ROWS * COLS - game.n_mines}", font(31, True), "#ffffff")
 
 
-def frame_at(games, states, starts, durs, time):
-    image = Image.new("RGB", (W * SS, H * SS), BG)
+def draw_finish(image, player, state, game, alpha):
+    if not (state["exploded"] is not None or state["won"]) or alpha <= 0:
+        return
+    x, y = ORIGIN[player]
+    overlay = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    tint = (237, 207, 114) if state["won"] else (238, 228, 218)
+    draw.rounded_rectangle((x * SS, y * SS, (x + BOARD) * SS, (y + BOARD) * SS), radius=10 * SS,
+                           fill=(*tint, int(210 * alpha)))
+    title = "Cleared!" if state["won"] else "Game over"
+    center_text(draw, (x + BOARD / 2, y + BOARD / 2 - 22), title, font(59, True),
+                (119, 110, 101, int(255 * alpha)))
+    safe = int(np.sum(state["visible"] >= 0))
+    center_text(draw, (x + BOARD / 2, y + BOARD / 2 + 45), f"{safe} / {81 - game.n_mines} safe", font(27, True),
+                (119, 110, 101, int(225 * alpha)))
+    image.alpha_composite(overlay)
+
+
+def frame_at(games, states, beliefs, starts, durs, time):
+    image = Image.new("RGBA", (W * SS, H * SS), BG)
     draw = ImageDraw.Draw(image)
-    center_text(draw, (W / 2, 72), "WHO PLAYS MINESWEEPER BETTER?", font(28, True), ACCENT)
-    center_text(draw, (W / 2, 133), "166,700 fly neurons  vs  Jev", font(48, True), TEXT)
-    draw.line((W / 2 * SS, 212 * SS, W / 2 * SS, 1055 * SS), fill=GRID, width=2 * SS)
-    for player, label, subtitle in (("fly", "Fly", "MaleCNS connectome + learned readout"),
-                                    ("jev", "Jev", "same board · visible clues only")):
+    for player, label in (("fly", "Fly"), ("jev", "Jev")):
         player_states = states[player]
         k = int(np.searchsorted(starts, time, side="right") - 1)
         k = max(0, min(k, len(player_states) - 1))
-        progress = 1 if k >= len(durs) else np.clip((time - starts[k]) / durs[k], 0, 1)
+        progress = 1 if k == 0 or k >= len(durs) else np.clip((time - starts[k]) / durs[k], 0, 1)
         state = player_states[k]
-        draw_status(draw, player, games[player], state, label, subtitle)
-        draw_board(draw, player, state, player_states[max(0, k - 1)], progress, games[player])
-    center_text(draw, (W / 2, 1110), "Identical seeded minefield  ·  guaranteed-safe center opening", font(25), MUTED)
-    return image.resize((W, H), Image.Resampling.LANCZOS)
+        draw_status(draw, player, games[player], state, label)
+        flags = {tuple(x) for x in beliefs[player][min(k, len(beliefs[player]) - 1)]} if beliefs[player] else set()
+        draw_board(draw, player, state, player_states[max(0, k - 1)], progress, games[player], flags)
+        draw_finish(image, player, state, games[player], np.clip((progress - 0.42) / 0.35, 0, 1))
+    center_text(draw, (W / 2, 803), f"SAME {games['fly'].n_mines}-MINE BOARD  ·  VISIBLE CLUES ONLY", font(22, True), MUTED)
+    return image.convert("RGB").resize((W, H), Image.Resampling.LANCZOS)
 
 
 def main():
     seed = int(sys.argv[1])
     out = Path(sys.argv[2]) if len(sys.argv) > 2 else ROOT / "renders" / f"fly-vs-jev-{seed}.mp4"
     fps = int(sys.argv[3]) if len(sys.argv) > 3 else 60
-    games, states = {}, {}
-    for player, folder in (("fly", "fly-none"), ("jev", "jev")):
-        record = json.loads((ROOT / "runs" / folder / f"{seed}.json").read_text(encoding="utf8"))
-        games[player], states[player] = replay(seed, record["moves"])
+    n_mines = int(sys.argv[4]) if len(sys.argv) > 4 else 10
+    games, states, beliefs = {}, {}, {}
+    suffix = "" if n_mines == 10 else f"-{n_mines}"
+    for player, folder in (("fly", f"fly-none{suffix}"), ("jev", f"jev{suffix}")):
+        path = ROOT / "runs" / folder / f"{seed}.json"
+        if not path.exists() and n_mines != 10:
+            path = ROOT / "results" / "showcase" / f"{player}.json"
+        record = json.loads(path.read_text(encoding="utf8"))
+        games[player], states[player] = replay(seed, record["moves"], n_mines=record.get("n_mines", n_mines))
+        beliefs[player] = record.get("flags", [])
     longest = max(len(x) for x in states.values())
     durs = schedule(longest)
     starts = INTRO + np.concatenate(([0], np.cumsum(durs[:-1])))
@@ -138,7 +178,7 @@ def main():
                            "-crf", "16", "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(silent)], stdin=subprocess.PIPE)
     frames = int(total * fps)
     for i in range(frames):
-        ff.stdin.write(frame_at(games, states, starts, durs, i / fps).tobytes())
+        ff.stdin.write(frame_at(games, states, beliefs, starts, durs, i / fps).tobytes())
         if i % 300 == 0: print(f"frame {i}/{frames}", flush=True)
     ff.stdin.close(); ff.wait()
     if ff.returncode: raise RuntimeError(f"ffmpeg exited {ff.returncode}")

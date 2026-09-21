@@ -13,18 +13,20 @@ from minesweeper.player import FlyPlayer
 RUNS = Path(os.environ.get("MINESWEEPER_RUNS", ROOT / "runs"))
 first, last = int(sys.argv[1]), int(sys.argv[2])
 control = sys.argv[3] if len(sys.argv) > 3 else "none"
-out = RUNS / f"fly-{control}"
+n_mines = int(sys.argv[4]) if len(sys.argv) > 4 else 10
+folder = f"fly-{control}" if n_mines == 10 else f"fly-{control}-{n_mines}"
+out = RUNS / folder
 out.mkdir(parents=True, exist_ok=True)
 player = FlyPlayer(RUNS / "readout" / "readout.npz", control=control)
 started = time.time()
 for seed in range(first, last):
-    game = Game(seed)
+    game, flags = Game(seed, n_mines=n_mines), []
     while not game.over:
         cells = game.legal_cells()
         scores = player.scores(game.visible(), cells)
+        flags.append([[int(v) for v in cells[i]] for i in scores.argsort()[:min(n_mines, len(cells))]])
         game.click(cells[int(scores.argmax())])
-    record = {**game.record(), "control": control}
+    record = {**game.record(), "flags": flags, "control": control}
     (out / f"{seed}.json").write_text(json.dumps(record), encoding="utf8")
-    print(f"seed {seed}: {'WIN' if game.won else 'mine'}, {game.safe_revealed}/71 safe, {len(game.moves) - 1} choices", flush=True)
+    print(f"seed {seed}: {'WIN' if game.won else 'mine'}, {game.safe_revealed}/{81 - n_mines} safe, {len(game.moves) - 1} choices", flush=True)
 print(f"completed {last - first} games in {time.time() - started:.0f}s", flush=True)
-

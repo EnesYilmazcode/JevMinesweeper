@@ -6,12 +6,13 @@ import time
 import urllib.error
 import urllib.request
 
-from .game import COLS, COVERED, ROWS
+from .game import COLS, COVERED, ROWS, neighbors
 
 URL = "https://ai-gateway.vercel.sh/v4/ai/evaluation-model"
-GOAL = ("Beginner Minesweeper on a 9 by 9 board with 10 mines. A number says exactly how many of its eight "
-        "neighbors are mines. Covered squares are unknown. Click a covered square; a mine loses immediately. "
-        "Reveal every safe square to win. Infer safe squares from the visible clues; never assume hidden information.")
+def goal(n_mines):
+    return (f"Minesweeper on a 9 by 9 board with {n_mines} mines. A number says exactly how many of its eight "
+            "neighbors are mines. Covered squares are unknown. Click a covered square; a mine loses immediately. "
+            "Reveal every safe square to win. Infer safe squares from the visible clues; never assume hidden information.")
 
 
 def label(cell):
@@ -26,10 +27,26 @@ def board_text(board):
     return "\n".join(lines)
 
 
-def request_body(board, cells):
-    return {"state": {"game": GOAL, "board": board_text(board), "notation": "# means covered; A1 is row 1 column A."},
-            "questions": {"click": {"type": "choice", "instructions": "Choose the safest covered square. Prioritize logically guaranteed safe squares.",
-                                      "criteria": {label(x): f"Click {label(x)} (row {x[0] + 1}, column {chr(65 + x[1])})." for x in cells}}}}
+def request_body(board, cells, n_mines=10):
+    def evidence(cell):
+        nearby = []
+        for r, c in neighbors(cell):
+            if board[r, c] >= 0:
+                covered = sum(board[x] == COVERED for x in neighbors((r, c)))
+                nearby.append(f"{label((r, c))} shows {int(board[r, c])} with {covered} covered neighbors")
+        return "; ".join(nearby) or "not adjacent to a revealed clue"
+    questions = {}
+    for cell in cells:
+        name = label(cell)
+        questions[name] = {
+            "type": "choice",
+            "instructions": (f"Judge covered square {name}. Local evidence: {evidence(cell)}. "
+                             "Use all visible board constraints and decide whether this square is safe or a mine."),
+            "criteria": {"safe": f"{name} does not contain a mine and is safe to click.",
+                         "mine": f"{name} contains a mine and should be flagged."},
+        }
+    return {"state": {"game": goal(n_mines), "board": board_text(board), "notation": "# means covered; A1 is row 1 column A."},
+            "questions": questions}
 
 
 def ask(body, key=None, attempts=12):
@@ -48,11 +65,14 @@ def ask(body, key=None, attempts=12):
             time.sleep(0.3 + random.random() * 0.3 + attempt * 0.35)
 
 
-def jev_move(board, cells, key=None):
-    result = ask(request_body(board, cells), key)
-    answer = result["answers"]["click"]
-    probabilities = answer.get("probabilities") or {answer["choice"]: 1.0}
-    choice = max(probabilities, key=probabilities.get)
+def jev_move(board, cells, key=None, n_mines=10):
+    result = ask(request_body(board, cells, n_mines), key)
+    safe_probabilities = {}
+    for cell in cells:
+        name = label(cell)
+        answer = result["answers"][name]
+        probabilities = answer.get("probabilities") or {answer["choice"]: 1.0}
+        safe_probabilities[name] = float(probabilities.get("safe", 0.0))
+    choice = max(safe_probabilities, key=safe_probabilities.get)
     lookup = {label(x): x for x in cells}
-    return lookup[choice], float(probabilities[choice]), (result.get("usage") or {}).get("inputTokens", 0)
-
+    return lookup[choice], safe_probabilities[choice], (result.get("usage") or {}).get("inputTokens", 0), safe_probabilities

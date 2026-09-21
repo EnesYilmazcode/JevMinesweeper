@@ -13,7 +13,7 @@ The full wiring of an adult fly—all 166,700 neurons—sees only the revealed c
 2. **Eyes.** The left eye sees all 81 visible cells. The right eye sees the same board centered on one proposed click. Covered squares, revealed clues, board edges, and the candidate marker become photoreceptor spike rates; hidden mines never enter the input.
 3. **Brain.** Each candidate runs through the MaleCNS connectome as a deterministic spiking network for 150 ms. The wiring of its 166,700 neurons and 6.2 million connections is never trained or changed.
 4. **Move.** A linear readout over 2,048 L1/L2 neurons scores the candidates. It learned once from a visible-information constraint solver, then played these games without the solver.
-5. **Jev.** Jev receives the rules, a coordinate-labelled text board, and every currently covered coordinate, then selects one through the Vercel AI Gateway.
+5. **Jev.** Jev receives the rules and a coordinate-labelled text board. It judges every covered square as safe or mined through the Vercel AI Gateway, clicks its safest square, and flags its five lowest-safety squares.
 
 ```mermaid
 flowchart TB
@@ -41,11 +41,11 @@ Sixteen held-out boards, seeds 6000–6015. The score is the number of safe squa
 | Player | Boards | Clears | Mean safe squares | Median |
 |---|---:|---:|---:|---:|
 | **Fly (connectome + readout)** | **16** | **0** | **59.8 / 71** | **62** |
-| Jev | 16 | 0 | 49.0 / 71 | 49 |
+| Jev | 16 | 0 | 59.1 / 71 | 60 |
 | Random clicks | 16 | 0 | 52.6 / 71 | 52 |
 | Visible-information constraint solver | 16 | 16 | 71.0 / 71 | 71 |
 
-The fly revealed more safe squares than Jev on 14 boards; Jev led on one and one tied (two-sided sign test, p = 0.00098). Neither learned player fully cleared a board, so this is evidence that the fly survived longer—not that it solved Minesweeper.
+The fly revealed more safe squares than Jev on nine boards; Jev led on six and one tied. The head-to-head difference is not statistically clear (two-sided sign test, p = 0.61). Both learned players substantially outlast random clicking, but neither fully cleared a standard 10-mine benchmark board.
 
 ### Held-out gate
 
@@ -64,13 +64,13 @@ Breaking the learned pathway removes the intact fly's edge. Every saved result, 
 
 ## The video
 
-The GIF above and the full MP4 replay seed 6012. Jev hits a mine after revealing 51 safe squares. The fly reaches 70 of 71—one safe square short—before its final click is also a mine.
+The GIF above and the full MP4 replay a genuine double-clear on seed 7045 using an easier five-mine showcase board. The fly clears it in five chosen clicks and Jev in three. Before every click, each player flags the five squares it currently considers most dangerous; those flags come directly from its recorded scores and can change as new clues appear. The exact showcase records are committed in [`results/showcase`](results/showcase).
 
-**[Watch/download the 1080p comparison with sound](media/fly-vs-jev.mp4)**
+**[Watch/download the full comparison with sound](media/fly-vs-jev.mp4)**
 
-Every reveal is regenerated from the seed and saved moves, and the replay must reach the recorded terminal state. The renderer starts on a useful first frame, animates each click and flood reveal, exposes the minefield at game over, and synthesizes stereo clicks, reveal chimes, and mine thumps with the fly panned left and Jev right.
+Every reveal and flag is regenerated from the saved record, and the replay must reach the recorded terminal state. The light-mode renderer uses large boards, staggered grow-in reveals, a centered **Game over** overlay after a mine or **Cleared!** after a win, and synthesized stereo clicks, reveal chimes, mine thumps, and win chords with the fly panned left and Jev right.
 
-<p align="center"><img src="media/final.jpg" width="760" alt="Final Minesweeper boards: the fly revealed 70 safe squares and Jev revealed 51"></p>
+<p align="center"><img src="media/final.jpg" width="760" alt="Final Minesweeper boards: both the fly and Jev cleared the board"></p>
 
 ## Run it
 
@@ -88,7 +88,9 @@ python scripts/baselines.py 6000 6016
 python scripts/scoreboard.py 6000 6016
 
 # Render the selected comparison; ffmpeg is required.
-python video/render.py 6012
+modal run scripts/modal_minesweeper.py::fly_games --first 7045 --last 7046 --control none --mines 5
+AI_GATEWAY_API_KEY=... python scripts/jev_games.py 7045 7046 1 5
+python video/render.py 7045 renders/fly-vs-jev-7045.mp4 60 5
 ```
 
 | Folder | What's in it |

@@ -32,5 +32,5 @@ def build_readout(positions: int = 500, keep: int = 2048):
 
 
 @app.function(**{**job, "timeout": 3 * 3600})
-def fly_games(first: int = 6000, last: int = 6016, control: str = "none"):
-    run("/root/scripts/fly_games.py", str(first), str(last), control)
+def fly_games(first: int = 6000, last: int = 6016, control: str = "none", mines: int = 10):
+    run("/root/scripts/fly_games.py", str(first), str(last), control, str(mines))

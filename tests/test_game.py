@@ -44,6 +44,15 @@ def test_saved_moves_replay_exactly():
     assert len(states) == len(game.moves)
 
 
+def test_showcase_mine_count_round_trips():
+    game = Game(7045, n_mines=5)
+    assert int(game.mines.sum()) == 5
+    while not game.over:
+        game.click(teacher_move(game.visible()))
+    restored, _ = replay(7045, game.record()["moves"], n_mines=5)
+    assert restored.record() == game.record()
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
