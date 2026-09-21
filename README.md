@@ -76,7 +76,7 @@ Five stages up a mine ladder. Stage one is a six-mine board, stage five is a ten
 | 4 | 9 | cleared in 11 clicks | cleared in 7 clicks |
 | 5 | 10 | **cleared in 12 clicks** | **mine on click 7, with 68 of 71 safe squares open** |
 
-Jev's race ends at 14.2 seconds, three squares short of the top of the ladder, and the fly plays on alone until 18.0.
+The video opens on the finish, then dissolves back to the empty boards and plays the race. Jev is out at 13.3 seconds, three squares short of the top of the ladder, and the fly plays on alone until 16.7.
 
 The ladder is there because of the cascade. On a 9×9 board with five mines the widest single click in a game opens 88% of the grid, and on 99% of boards some click opens more than half of it, so a whole game is over in six clicks. At ten mines the widest click opens 56% and a game takes nineteen. Mine count, not board size, is the knob: a 10×10 board with ten mines cascades exactly as hard as a 9×9 with eight, 66% either way, because what matters is the density. Measured over 250 boards per setting under perfect play.
 

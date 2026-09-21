@@ -32,6 +32,9 @@ INTRO, OUTRO = 0.55, 1.05
 FIRST_READY, NEXT_READY = 0.45, 0.18
 CLEAR_HOLD = 0.60
 TARGET_SECONDS, MOVE_LIMITS, CASCADE_BONUS = 19.0, (0.15, 0.40), 0.9
+# X gives no thumbnail control, so the first frame is the thumbnail: hold the finish, then
+# dissolve back to the empty boards and play the race.
+LEAD_HOLD, LEAD_FADE = 0.85, 0.45
 
 
 def font(size, bold=False):
@@ -235,7 +238,8 @@ def pace(lanes):
     for stages in lanes.values():
         fixed = FIRST_READY + (len(stages) - 1) * NEXT_READY + len(stages) * CLEAR_HOLD
         weight = sum(move_weight(state) for stage in stages for state in stage["states"][1:])
-        units.append((TARGET_SECONDS - OUTRO - INTRO - fixed) / max(1e-6, weight))
+        budget = TARGET_SECONDS - LEAD_HOLD - LEAD_FADE - OUTRO - INTRO - fixed
+        units.append(budget / max(1e-6, weight))
     return float(np.clip(min(units), *MOVE_LIMITS))
 
 
@@ -321,19 +325,30 @@ def main():
     timelines, finishes = {}, {}
     for player in lanes:
         timelines[player], finishes[player] = make_timeline(lanes[player], unit)
-    total = max(finishes.values()) + OUTRO
+    race = max(finishes.values()) + OUTRO
+    lead = LEAD_HOLD + LEAD_FADE
+    total = lead + race
     out.parent.mkdir(parents=True, exist_ok=True)
     silent = out.with_suffix(".silent.mp4")
     ff = subprocess.Popen(["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
                            "-s", f"{W}x{H}", "-r", str(fps), "-i", "-", "-c:v", "libx264", "-preset", "slow",
                            "-crf", "16", "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(silent)], stdin=subprocess.PIPE)
     frames = int(total * fps)
+    finish_frame = frame_at(lanes, timelines, race - OUTRO)
+    opening = frame_at(lanes, timelines, 0)
     for i in range(frames):
-        ff.stdin.write(frame_at(lanes, timelines, i / fps).tobytes())
+        time = i / fps
+        if time < LEAD_HOLD:
+            image = finish_frame
+        elif time < lead:
+            image = Image.blend(finish_frame, opening, (time - LEAD_HOLD) / LEAD_FADE)
+        else:
+            image = frame_at(lanes, timelines, time - lead)
+        ff.stdin.write(image.tobytes())
         if i % 300 == 0: print(f"frame {i}/{frames}", flush=True)
     ff.stdin.close(); ff.wait()
     if ff.returncode: raise RuntimeError(f"ffmpeg exited {ff.returncode}")
-    events = sound_events(lanes, timelines)
+    events = [(at + lead, kind, pan, amount) for at, kind, pan, amount in sound_events(lanes, timelines)]
     wav = out.with_suffix(".wav")
     write_wav(wav, mix(events, total))
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(silent), "-i", str(wav), "-map", "0:v", "-map", "1:a",
@@ -341,7 +356,7 @@ def main():
     silent.unlink(); wav.unlink()
     passed = {p: sum(stage["game"].won for stage in lanes[p]) for p in lanes}
     winner = max(lanes, key=lambda p: (passed[p], -finishes[p]))
-    print(f"wrote {out}: {total:.1f}s, {len(lanes['fly'])} stages, "
+    print(f"wrote {out}: {total:.1f}s ({lead:.1f}s lead-in), {len(lanes['fly'])} stages, "
           f"fly passed {passed['fly']} in {finishes['fly']:.1f}s, jev passed {passed['jev']} in "
           f"{finishes['jev']:.1f}s, {winner} wins")
 
